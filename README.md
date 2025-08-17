@@ -24,3 +24,29 @@ A Streamlit-based application that allows users to interact with data using natu
 - OpenAI API
 - Pandas / Matplotlib
 - Git & GitHub
+
+## 📊 Visual Analytics (Phase 4)
+
+The Conversational Analytics Dashboard supports dynamic chart generation based on user queries using Matplotlib and Seaborn.
+
+### 🔧 How It Works
+When a user enters a query like "Show top products by quantity sold", the system:
+1. Parses the intent of the query.
+2. Matches it to one of the predefined visualization types.
+3. Generates the chart.
+4. Saves it to the `assets/` directory for display.
+
+### ✅ Supported Chart Types
+
+| Query Intent                            | Chart Type                | File Output Path                    |
+|-----------------------------------------|---------------------------|-------------------------------------|
+| "Top products by quantity sold"         | Horizontal Bar Chart      | `assets/top_products.png`           |
+| "Sales by country"                      | Bar Chart                 | `assets/sales_by_country.png`       |
+| "Monthly sales trend"                   | Line Plot                 | `assets/monthly_sales_trend.png`    |
+| "Unit price distribution"              | Histogram (with KDE)      | `assets/unit_price_distribution.png`|
+| "Top customers by total spend"          | Bar Chart                 | `assets/top_customers.png`          |
+
+### 🧪 Example
+```python
+from src.chart_generator import generate_chart_from_query
+chart_path = generate_chart_from_query(df, "Show me the monthly sales trend")
