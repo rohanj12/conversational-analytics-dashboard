@@ -10,13 +10,14 @@ A Streamlit-based application that allows users to interact with data using natu
 - Extendable for SQL, dashboards, or insights
 
 ## 📁 Folder Structure
-├── data/ # CSV datasets
-├── notebooks/ # EDA or prototype notebooks
-├── src/ # LLM interaction logic
-├── streamlit_app/ # Streamlit frontend
-├── assets/ # Screenshots
-├── requirements.txt
-└── README.md
+-> data/ # CSV datasets
+-> notebooks/ # EDA or prototype notebooks
+-> src/ # LLM interaction logic
+-> streamlit_app/ # Streamlit frontend
+-> assets/ # Screenshots
+-> requirements.txt
+-> README.md
+
 
 ## 🔧 Technologies
 
@@ -50,3 +51,5 @@ When a user enters a query like "Show top products by quantity sold", the system
 ```python
 from src.chart_generator import generate_chart_from_query
 chart_path = generate_chart_from_query(df, "Show me the monthly sales trend")
+
+
