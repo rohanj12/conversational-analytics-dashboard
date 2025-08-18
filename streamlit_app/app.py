@@ -2,7 +2,10 @@ import streamlit as st
 import pandas as pd
 from src.llm_engine import generate_code_from_query
 from src.chart_generation import generate_chart_from_query
+import sys
 import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from PIL import Image
 
 # ----------------- PAGE CONFIG -------------------
