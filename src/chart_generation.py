@@ -1,81 +1,70 @@
-import matplotlib.pyplot as plt
-import seaborn as sns
-import pandas as pd
 import os
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
 
-def generate_chart_from_query(df, user_query):
-    os.makedirs("assets", exist_ok=True)
+def generate_chart_from_query(df, query):
+    query = query.lower()
+    chart_path = "assets/chart_output.png"
+    
+    if "distribution" in query or "histogram" in query:
+        # Find a numeric column to plot
+        for col in df.select_dtypes(include="number").columns:
+            if col in query or "fare" in query and "fare" in col:
+                plt.figure(figsize=(10, 6))
+                sns.histplot(df[col], kde=True, bins=30)
+                plt.title(f"Distribution of {col}")
+                plt.tight_layout()
+                plt.savefig(chart_path)
+                plt.close()
+                return chart_path
 
-    if "top products" in user_query.lower():
-        result_df = df.groupby("Description")["Quantity"].sum().sort_values(ascending=False).head(10)
+    elif "trend" in query or "line" in query or "over time" in query:
+        # Look for datetime and numeric columns
+        df = df.copy()
+        datetime_col = None
+        for col in df.columns:
+            if "date" in col.lower() or "time" in col.lower():
+                df[col] = pd.to_datetime(df[col], errors="coerce")
+                datetime_col = col
+                break
 
-        plt.figure(figsize=(10, 6))
-        sns.barplot(x=result_df.values, y=result_df.index)
-        plt.title("Top 10 Selling Products")
-        plt.xlabel("Quantity Sold")
-        plt.ylabel("Product")
-        chart_path = "assets/top_products.png"
-        plt.tight_layout()
-        plt.savefig(chart_path)
-        plt.close()
-        return chart_path
+        if datetime_col:
+            df = df.dropna(subset=[datetime_col])
+            numeric_cols = df.select_dtypes(include="number").columns
+            if len(numeric_cols) > 0:
+                df = df.groupby(df[datetime_col].dt.date)[numeric_cols[0]].sum()
+                plt.figure(figsize=(10, 6))
+                df.plot()
+                plt.title(f"{numeric_cols[0]} Trend Over Time")
+                plt.tight_layout()
+                plt.savefig(chart_path)
+                plt.close()
+                return chart_path
 
-    elif "sales by country" in user_query.lower():
-        result_df = df.groupby("Country")["Quantity"].sum().sort_values(ascending=False)
+    elif "top" in query or "bar" in query:
+        # Look for categorical vs numeric
+        numeric_col = None
+        cat_col = None
 
-        plt.figure(figsize=(12, 6))
-        sns.barplot(x=result_df.index[:10], y=result_df.values[:10])
-        plt.title("Sales by Country (Top 10)")
-        plt.xlabel("Country")
-        plt.ylabel("Quantity Sold")
-        chart_path = "assets/sales_by_country.png"
-        plt.tight_layout()
-        plt.savefig(chart_path)
-        plt.close()
-        return chart_path
+        for col in df.select_dtypes(include="object").columns:
+            if "name" in col.lower() or "pickup" in col.lower():
+                cat_col = col
+                break
 
-    elif "monthly sales trend" in user_query.lower():
-        df["InvoiceDate"] = pd.to_datetime(df["InvoiceDate"])
-        df["Month"] = df["InvoiceDate"].dt.to_period("M")
-        monthly_sales = df.groupby("Month")["Quantity"].sum()
+        for col in df.select_dtypes(include="number").columns:
+            if "fare" in col.lower() or "amount" in col.lower():
+                numeric_col = col
+                break
 
-        plt.figure(figsize=(12, 6))
-        monthly_sales.plot(kind="line", marker='o')
-        plt.title("Monthly Sales Trend")
-        plt.xlabel("Month")
-        plt.ylabel("Quantity Sold")
-        chart_path = "assets/monthly_sales_trend.png"
-        plt.tight_layout()
-        plt.savefig(chart_path)
-        plt.close()
-        return chart_path
+        if cat_col and numeric_col:
+            top_vals = df.groupby(cat_col)[numeric_col].sum().sort_values(ascending=False).head(10)
+            plt.figure(figsize=(10, 6))
+            sns.barplot(x=top_vals.values, y=top_vals.index)
+            plt.title(f"Top 10 {cat_col} by {numeric_col}")
+            plt.tight_layout()
+            plt.savefig(chart_path)
+            plt.close()
+            return chart_path
 
-    elif "unit price distribution" in user_query.lower():
-        plt.figure(figsize=(10, 6))
-        sns.histplot(df["UnitPrice"], bins=50, kde=True)
-        plt.title("Unit Price Distribution")
-        plt.xlabel("Unit Price")
-        plt.ylabel("Frequency")
-        chart_path = "assets/unit_price_distribution.png"
-        plt.tight_layout()
-        plt.savefig(chart_path)
-        plt.close()
-        return chart_path
-
-    elif "top customers" in user_query.lower():
-        df["TotalSpent"] = df["Quantity"] * df["UnitPrice"]
-        result_df = df.groupby("CustomerID")["TotalSpent"].sum().sort_values(ascending=False).head(10)
-
-        plt.figure(figsize=(10, 6))
-        sns.barplot(x=result_df.values, y=result_df.index.astype(str))
-        plt.title("Top 10 Customers by Spend")
-        plt.xlabel("Total Spent")
-        plt.ylabel("Customer ID")
-        chart_path = "assets/top_customers.png"
-        plt.tight_layout()
-        plt.savefig(chart_path)
-        plt.close()
-        return chart_path
-
-    else:
-        return None
+    return None
