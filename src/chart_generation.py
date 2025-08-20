@@ -1,102 +1,118 @@
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
-import uuid
-import os
 import numpy as np
+import os
+import hashlib
+import re
 
-def generate_chart_from_query(df, user_query):
-    user_query = user_query.lower()
-    chart_path = f"assets/chart_{uuid.uuid4().hex[:8]}.png"
+def generate_chart_from_query(df, query):
+    query = query.lower()
+    query_hash = hashlib.md5(query.encode()).hexdigest()
+    filename = f"assets/chart_{query_hash}.png"
 
-    # Get column types
-    numeric_cols = df.select_dtypes(include='number').columns.tolist()
-    categorical_cols = df.select_dtypes(include='object').columns.tolist()
-
-    # Step 1: Determine chart type
-    if any(kw in user_query for kw in ["trend", "line", "time", "monthly", "over time", "daily"]):
-        chart_type = "line"
-    elif any(kw in user_query for kw in ["bar", "top", "count", "frequency", "by"]):
-        chart_type = "bar"
-    elif any(kw in user_query for kw in ["histogram", "distribution", "spread"]):
-        chart_type = "hist"
-    elif any(kw in user_query for kw in ["scatter", "relationship", "vs", "correlation"]):
-        chart_type = "scatter"
-    elif any(kw in user_query for kw in ["pie", "portion", "percentage"]):
-        chart_type = "pie"
-    else:
-        chart_type = "hist"  # fallback
-
-    # Step 2: Try to guess columns from query
-    x_col = y_col = None
-    for col in df.columns:
-        if col.lower() in user_query:
-            if df[col].dtype == 'object' and not x_col:
-                x_col = col
-            elif df[col].dtype in ['int64', 'float64'] and not y_col:
-                y_col = col
-
-    # Default fallback if nothing found
-    if not x_col and categorical_cols:
-        x_col = categorical_cols[0]
-    if not y_col and numeric_cols:
-        y_col = numeric_cols[0]
-
-    # Step 3: Generate chart
-    plt.figure(figsize=(10, 6))
     try:
-        if chart_type == "line":
-            if x_col and y_col:
-                df_sorted = df.sort_values(x_col)
-                sns.lineplot(data=df_sorted, x=x_col, y=y_col)
-                plt.title(f"{y_col} over {x_col}")
-            else:
-                raise ValueError("Line chart needs numeric + categorical columns.")
+        # Convert columns to datetime if possible
+        for col in df.columns:
+            if df[col].dtype == "object":
+                try:
+                    df[col] = pd.to_datetime(df[col])
+                except:
+                    pass
 
-        elif chart_type == "bar":
-            if x_col:
-                value_counts = df[x_col].value_counts().head(10)
-                sns.barplot(x=value_counts.index, y=value_counts.values)
-                plt.xticks(rotation=45)
-                plt.title(f"Top 10 {x_col}")
-                plt.xlabel(x_col)
-                plt.ylabel("Count")
-            else:
-                raise ValueError("No categorical column for bar chart.")
+        numeric_cols = df.select_dtypes(include="number").columns.tolist()
+        categorical_cols = df.select_dtypes(include="object").columns.tolist()
+        datetime_cols = df.select_dtypes(include="datetime").columns.tolist()
 
-        elif chart_type == "hist":
-            if y_col:
-                sns.histplot(df[y_col], bins=30, kde=True)
-                plt.title(f"Distribution of {y_col}")
-                plt.xlabel(y_col)
-                plt.ylabel("Frequency")
-            else:
-                raise ValueError("No numeric column for histogram.")
+        # Histogram / Distribution
+        if "histogram" in query or "distribution" in query:
+            for col in numeric_cols:
+                if col in query:
+                    plt.figure(figsize=(10, 6))
+                    sns.histplot(df[col], bins=30, kde=True)
+                    plt.title(f"Histogram of {col}")
+                    plt.tight_layout()
+                    plt.savefig(filename)
+                    plt.close()
+                    return filename
 
-        elif chart_type == "scatter":
-            if x_col and y_col:
-                sns.scatterplot(data=df, x=x_col, y=y_col)
-                plt.title(f"{y_col} vs {x_col}")
-            else:
-                raise ValueError("Scatter plot requires numeric x and y.")
+        # Bar chart
+        if "bar" in query or "top" in query or "count" in query:
+            for col in categorical_cols:
+                if col in query:
+                    plt.figure(figsize=(10, 6))
+                    value_counts = df[col].value_counts().nlargest(10)
+                    sns.barplot(x=value_counts.values, y=value_counts.index)
+                    plt.title(f"Top 10 {col}")
+                    plt.tight_layout()
+                    plt.savefig(filename)
+                    plt.close()
+                    return filename
 
-        elif chart_type == "pie":
-            if x_col:
-                pie_data = df[x_col].value_counts().head(5)
-                plt.pie(pie_data, labels=pie_data.index, autopct='%1.1f%%')
-                plt.title(f"Distribution of {x_col}")
-            else:
-                raise ValueError("No suitable column for pie chart.")
+        # Line chart / Trend over time
+        if "line" in query or "trend" in query or "time" in query or "date" in query:
+            if datetime_cols:
+                time_col = datetime_cols[0]
+                df_sorted = df.sort_values(by=time_col)
+                for col in numeric_cols:
+                    if col in query:
+                        plt.figure(figsize=(10, 6))
+                        sns.lineplot(x=df_sorted[time_col], y=df_sorted[col])
+                        plt.title(f"{col.title()} Over Time")
+                        plt.tight_layout()
+                        plt.savefig(filename)
+                        plt.close()
+                        return filename
 
-        else:
-            raise ValueError("Unknown chart type.")
+        # Pie chart
+        if "pie" in query:
+            for col in categorical_cols:
+                if col in query:
+                    plt.figure(figsize=(8, 8))
+                    df[col].value_counts().nlargest(5).plot.pie(autopct="%1.1f%%", startangle=90)
+                    plt.ylabel("")
+                    plt.title(f"Pie Chart of {col}")
+                    plt.tight_layout()
+                    plt.savefig(filename)
+                    plt.close()
+                    return filename
 
-        plt.tight_layout()
-        plt.savefig(chart_path)
-        plt.close()
-        return chart_path
+        # Scatter plot
+        if "scatter" in query:
+            if len(numeric_cols) >= 2:
+                for pair in [(x, y) for x in numeric_cols for y in numeric_cols if x != y]:
+                    if f"{pair[0]} vs {pair[1]}" in query or f"{pair[1]} vs {pair[0]}" in query:
+                        plt.figure(figsize=(10, 6))
+                        sns.scatterplot(data=df, x=pair[0], y=pair[1])
+                        plt.title(f"{pair[0]} vs {pair[1]}")
+                        plt.tight_layout()
+                        plt.savefig(filename)
+                        plt.close()
+                        return filename
+
+        # Correlation heatmap
+        if "correlation" in query or "heatmap" in query:
+            plt.figure(figsize=(10, 6))
+            corr = df[numeric_cols].corr()
+            sns.heatmap(corr, annot=True, cmap="coolwarm", fmt=".2f")
+            plt.title("Correlation Heatmap")
+            plt.tight_layout()
+            plt.savefig(filename)
+            plt.close()
+            return filename
+
+        # Fallback generic chart (Top categories)
+        if categorical_cols:
+            fallback_col = categorical_cols[0]
+            value_counts = df[fallback_col].value_counts().nlargest(10)
+            plt.figure(figsize=(10, 6))
+            sns.barplot(x=value_counts.values, y=value_counts.index)
+            plt.title(f"Top 10 {fallback_col} (Fallback)")
+            plt.tight_layout()
+            plt.savefig(filename)
+            plt.close()
+            return filename
 
     except Exception as e:
-        print(f"[Chart error] {e}")
-        plt.close()
+        print("Chart generation error:", str(e))
         return None
