@@ -3,6 +3,7 @@ import seaborn as sns
 import pandas as pd
 import uuid
 import os
+import numpy as np
 
 def generate_chart_from_query(df, user_query):
     user_query = user_query.lower()
