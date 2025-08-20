@@ -1,94 +1,69 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import sys
 import os
+import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from src.llm_engine import generate_code_from_query
 from src.chart_generation import generate_chart_from_query
-from PIL import Image
 
-# ----------------- PAGE CONFIG -------------------
-st.set_page_config(
-    page_title="Conversational Analytics Dashboard",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="Conversational Analytics Dashboard", layout="wide")
 
-# ----------------- SIDEBAR -------------------
-with st.sidebar:
-    st.header("💬 Example Queries")
-    st.markdown("""
-    - Show top 10 booking sources  
-    - Histogram of ride durations  
-    - Ride trends over time  
-    - Correlation between fare and distance  
-    - Generate a pie chart of ride types  
-    """)
-    st.markdown("---")
-    st.markdown("Made with ❤️ by [@rohanj12](https://github.com/rohanj12)")
+st.sidebar.header("💬 Example Queries")
+st.sidebar.markdown("""
+- Show top 10 ride types
+- Histogram of fare amount
+- Line chart of bookings over time
+- Bar chart of bookings per day
+""")
+st.sidebar.markdown("---")
+st.sidebar.markdown("Made with ❤️ by [@rohanj12](https://github.com/rohanj12)")
 
-# ----------------- MAIN TITLE -------------------
 st.title("🧠 Conversational Analytics Dashboard")
-st.markdown("Ask a question about your data in plain English, and get answers instantly as **tables** or **charts**.")
+st.markdown("Ask a question about your data in plain English, and get insights as **tables** or **charts**.")
 
-# ----------------- FILE UPLOAD -------------------
-uploaded_file = st.file_uploader("📤 Upload a CSV file", type=["csv"])
+uploaded_file = st.file_uploader("📤 Upload your CSV", type=["csv"])
 
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
-    st.success(f"✅ Uploaded: {uploaded_file.name}")
-    st.write(f"📊 Shape: `{df.shape[0]} rows × {df.shape[1]} columns`")
+    st.success(f"Uploaded `{uploaded_file.name}` successfully!")
+    st.write(f"Shape: `{df.shape[0]} rows × {df.shape[1]} columns`")
     st.dataframe(df.head(5))
 
-    # ----------------- QUERY INPUT -------------------
-    user_query = st.text_input("🗨️ Ask a question about your data")
+    user_query = st.text_input("🗨️ Ask your question")
 
     if user_query:
-        with st.spinner("💡 Processing your query..."):
+        with st.spinner("Processing..."):
 
-            # Detect chart-related keywords
-            chart_keywords = [
-                "chart", "plot", "distribution", "trend", "graph",
-                "line", "bar", "histogram", "pie", "scatter", "top", "correlation", "heatmap"
-            ]
-
-            if any(kw in user_query.lower() for kw in chart_keywords):
+            if any(keyword in user_query.lower() for keyword in ["chart", "plot", "trend", "distribution", "bar", "line", "hist", "scatter", "pie"]):
                 chart_path = generate_chart_from_query(df, user_query)
                 if chart_path and os.path.exists(chart_path):
-                    st.success("📈 Chart generated successfully!")
+                    st.success("📈 Chart generated:")
+                    from PIL import Image
                     st.image(Image.open(chart_path))
                 else:
-                    st.error("❌ Could not generate a chart for this query.")
+                    st.error("❌ Could not generate a chart.")
             else:
                 try:
-                    # LLM-based table code generation
                     code = generate_code_from_query(user_query, df.columns)
-                    if code.startswith("```"):
-                        code = code.strip("```").replace("python", "").strip()
 
                     st.code(code, language="python")
 
-                    local_vars = {"df": df.copy(), "pd": pd, "np": __import__("numpy")}
+                    local_vars = {"df": df.copy(), "np": np}
                     exec(code, globals(), local_vars)
 
-                    result_df = None
-                    for var in local_vars.values():
-                        if isinstance(var, pd.DataFrame) and var is not df:
-                            result_df = var
-                            break
+                    result_df = local_vars.get("result_df", None)
 
-                    if result_df is not None:
-                        st.success("📄 Table generated successfully!")
+                    if isinstance(result_df, pd.DataFrame):
+                        st.success("📄 Table generated:")
                         st.dataframe(result_df.head(10))
 
                         csv = result_df.to_csv(index=False).encode("utf-8")
                         st.download_button("📥 Download CSV", csv, "result.csv", "text/csv")
                     else:
-                        st.warning("⚠️ No tabular output returned.")
-
+                        st.warning("⚠️ No DataFrame returned.")
                 except Exception as e:
-                    st.error(f"❌ Error while generating table:\n\n{e}")
+                    st.error(f"❌ Error: {e}")
 else:
-    st.info("⬆️ Upload a CSV to begin.")
+    st.info("⬆️ Upload a CSV file to begin.")
