@@ -10,23 +10,31 @@ client = OpenAI(
     organization=os.getenv("OPENAI_ORG_ID")
 )
 
-def generate_code_from_query(user_query, dataframe_columns):
+def generate_code_from_query(query, columns):
     prompt = f"""
-You are an intelligent data assistant. 
-Given the following dataframe columns: {', '.join(dataframe_columns)},
-generate clean, executable pandas code to answer this question: "{user_query}"
+You are a Python data analyst. Write a single line of pandas code that answers the question:
+'{query}'
+Only use these columns: {', '.join(columns)}.
+Always assign your output to a variable named result_df.
 
-Always store the final result in a DataFrame called `result_df`.
-Only return the code, no explanations.
+Only return the code, without explanation, markdown, or comments.
 """
+
     response = client.chat.completions.create(
         model="gpt-4",
-        messages=[
-            {"role": "user", "content": prompt}
-        ],
+        messages=[{"role": "user", "content": prompt}],
         temperature=0.2,
     )
 
-    return response.choices[0].message.content
+    code = response.choices[0].message.content.strip()
+
+    if code.startswith("```"):
+        code = code.strip("```").replace("python", "").strip()
+
+    # Ensure output is assigned to result_df
+    if "result_df" not in code:
+        code = f"result_df = {code}"
+
+    return code
 
     
