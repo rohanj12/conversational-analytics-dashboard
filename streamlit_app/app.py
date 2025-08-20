@@ -47,6 +47,8 @@ if uploaded_file:
             else:
                 try:
                     code = generate_code_from_query(user_query, df.columns)
+                    if code.startswith("```"):
+                        code = code.strip("```").replace("python", "").strip()
 
                     st.code(code, language="python")
 
