@@ -17,7 +17,7 @@ def generate_chart_from_query(df, user_query):
         chart_type = "line"
     elif any(kw in user_query for kw in ["bar", "top", "count", "frequency", "by"]):
         chart_type = "bar"
-    elif any(kw in user_query for kw in ["hist", "distribution", "spread"]):
+    elif any(kw in user_query for kw in ["histogram", "distribution", "spread"]):
         chart_type = "hist"
     elif any(kw in user_query for kw in ["scatter", "relationship", "vs", "correlation"]):
         chart_type = "scatter"
