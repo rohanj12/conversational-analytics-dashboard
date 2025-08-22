@@ -1,5 +1,3 @@
-# src/llm_engine.py
-
 import openai
 import os
 
@@ -8,42 +6,46 @@ client = openai.OpenAI(
     organization=os.getenv("OPENAI_ORG_ID")
 )
 
-def generate_code_from_query(user_query, column_names):
+def generate_code_from_query(user_query, df):
     """
-    Generate robust pandas code from a natural language query on a DataFrame `df`.
-    The function returns code that defines a new variable `result_df` as the result.
+    Convert a natural language query into executable pandas code on DataFrame `df`,
+    returning a new DataFrame named `result_df`.
     """
 
-    column_list = ", ".join([f'"{col}"' for col in column_names])
+    column_names = df.columns.tolist()
+    column_values_map = {
+        col: df[col].dropna().astype(str).unique()[:10].tolist()  # preview up to 10 values per column
+        for col in column_names if df[col].dtype == 'object' or df[col].dtype.name == 'category'
+    }
+
+    col_list = ", ".join([f'"{col}"' for col in column_names])
+    val_list = "\n".join([f"{col}: {values}" for col, values in column_values_map.items()])
 
     prompt = f"""
-You are a senior Python data analyst. Convert the following user query into working pandas code that operates on a DataFrame named `df`. The goal is to generate a new DataFrame called `result_df`.
+You are a senior Python data analyst. Write working pandas code that performs the following user query on a DataFrame named `df`.
 
-Only return code – no explanations or markdown. Make sure of the following:
+⚠️ Important Notes:
+- The column names are: {col_list}
+- Example values in these columns:
+{val_list}
+- Ensure comparisons are case-insensitive (use `.str.lower()`).
+- Only return Python code. Do not print or explain anything.
+- Your result must be stored in a DataFrame called `result_df`.
+- If unsure, return `result_df = df.head(10)`
 
-1. Column names in the dataset are: [{column_list}]
-2. Be tolerant to case mismatches in both column values and query.
-3. If filtering for values (e.g., "where vehicle is ebike"), use `.str.lower() == 'value'` logic for comparison.
-4. If querying or grouping by a column mentioned indirectly (like "average trips by user type"), map natural phrases to real column names.
-5. Avoid printing or displaying anything. Only define `result_df`.
-6. If the query asks for multiple steps (e.g., filter then group), chain them logically in one statement or break them in 2 lines.
-7. If nothing is returned from query intent, return a slice of the dataframe: `result_df = df.head(10)`
-
-User query: **{user_query}**
+User query: {user_query}
 """
+
     try:
         response = client.chat.completions.create(
             model="gpt-4",
-            messages=[{
-                "role": "user",
-                "content": prompt
-            }],
-            temperature=0
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2
         )
 
         code = response.choices[0].message.content.strip()
 
-        # Remove markdown backticks if included
+        # Clean up markdown
         if code.startswith("```"):
             code = code.strip("`").replace("python", "").strip()
 
