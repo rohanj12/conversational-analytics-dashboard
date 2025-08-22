@@ -1,60 +1,102 @@
-import os
-import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from openai import OpenAI
+import pandas as pd
+import os
 import uuid
+import re
+import numpy as np
+import warnings
+warnings.filterwarnings("ignore")
 
-client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"),
-    organization=os.getenv("OPENAI_ORG_ID")
-)
+def generate_chart_from_query(df, query):
+    try:
+        # Normalize query
+        query = query.lower()
 
-def generate_chart_from_query(df: pd.DataFrame, query: str, output_path="chart.png") -> str:
-    prompt = f"""
-You are a Python data visualization assistant. Given a user query and a pandas DataFrame called `df`, generate Python code to create an appropriate chart using `matplotlib` or `seaborn`.
+        # Infer chart type
+        if "hist" in query or "distribution" in query:
+            chart_type = "histogram"
+        elif "bar" in query:
+            chart_type = "bar"
+        elif "line" in query or "trend" in query:
+            chart_type = "line"
+        elif "scatter" in query:
+            chart_type = "scatter"
+        elif "box" in query:
+            chart_type = "box"
+        else:
+            chart_type = "default"
 
-Rules:
-- Only use columns that exist in df: {list(df.columns)}
-- Save the figure using `plt.savefig("chart.png")` at the end.
-- Do not show the plot using `plt.show()`.
-- The DataFrame is already loaded as `df`.
-- Wrap your code in a Python code block.
+        # Try to extract potential columns from query
+        tokens = re.findall(r"\b[\w']+\b", query)
+        candidate_columns = [col for col in df.columns if any(tok in col.lower() for tok in tokens)]
 
-User query: "{query}"
+        # Choose numeric and categorical columns
+        numeric_cols = df.select_dtypes(include='number').columns.tolist()
+        categorical_cols = df.select_dtypes(include='object').columns.tolist()
 
-Respond with only the code, wrapped like this:
+        # Fallback if no candidates match
+        x_col = None
+        y_col = None
 
-```python
-# your chart code
-"""
-# Get chart code from OpenAI
-try:
-    response = client.chat.completions.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.3,
-    )
+        if chart_type == "histogram":
+            y_col = candidate_columns[0] if candidate_columns else (numeric_cols[0] if numeric_cols else None)
 
-    chart_code = response.choices[0].message.content.strip()
+        elif chart_type == "bar":
+            x_col = candidate_columns[0] if candidate_columns else (categorical_cols[0] if categorical_cols else None)
+            y_col = candidate_columns[1] if len(candidate_columns) > 1 else (numeric_cols[0] if numeric_cols else None)
 
-    # Remove ```python block if present
-    if chart_code.startswith("```"):
-        chart_code = chart_code.strip("```").replace("python", "").strip()
+        elif chart_type == "line":
+            x_col = candidate_columns[0] if candidate_columns else (df.columns[0])
+            y_col = candidate_columns[1] if len(candidate_columns) > 1 else (numeric_cols[0] if numeric_cols else None)
 
-    # Unique filename for chart
-    chart_path = f"chart_{uuid.uuid4().hex}.png"
+        elif chart_type == "scatter":
+            if len(numeric_cols) >= 2:
+                x_col, y_col = numeric_cols[:2]
 
-    # Prepare local execution environment
-    local_env = {"df": df.copy(), "plt": plt, "sns": sns}
-    exec(chart_code, {}, local_env)
+        elif chart_type == "box":
+            x_col = candidate_columns[0] if candidate_columns else (categorical_cols[0] if categorical_cols else None)
+            y_col = candidate_columns[1] if len(candidate_columns) > 1 else (numeric_cols[0] if numeric_cols else None)
 
-    # Replace chart.png with unique path if needed
-    if os.path.exists("chart.png"):
-        os.rename("chart.png", chart_path)
+        # Generate plot
+        plt.figure(figsize=(10, 6))
 
-    return chart_path if os.path.exists(chart_path) else None
+        if chart_type == "histogram" and y_col:
+            sns.histplot(df[y_col].dropna(), kde=True)
+            plt.xlabel(y_col)
+            plt.title(f"Histogram of {y_col}")
 
-except Exception as e:
-    print("❌ Chart generation failed:", str(e))
-    return None
+        elif chart_type == "bar" and x_col and y_col:
+            grouped = df.groupby(x_col)[y_col].sum().sort_values(ascending=False).head(10)
+            sns.barplot(x=grouped.values, y=grouped.index)
+            plt.xlabel(y_col)
+            plt.ylabel(x_col)
+            plt.title(f"Top {x_col} by {y_col}")
+
+        elif chart_type == "line" and x_col and y_col:
+            df_sorted = df.sort_values(x_col)
+            plt.plot(df_sorted[x_col], df_sorted[y_col])
+            plt.xlabel(x_col)
+            plt.ylabel(y_col)
+            plt.title(f"{y_col} over {x_col}")
+
+        elif chart_type == "scatter" and x_col and y_col:
+            sns.scatterplot(data=df, x=x_col, y=y_col)
+            plt.title(f"{y_col} vs {x_col}")
+
+        elif chart_type == "box" and x_col and y_col:
+            sns.boxplot(data=df, x=x_col, y=y_col)
+            plt.title(f"Boxplot of {y_col} by {x_col}")
+
+        else:
+            return None  # If no valid chart
+
+        chart_path = f"chart_{uuid.uuid4().hex}.png"
+        plt.tight_layout()
+        plt.savefig(chart_path)
+        plt.close()
+        return chart_path
+
+    except Exception as e:
+        print("Chart generation error:", e)
+        return None
