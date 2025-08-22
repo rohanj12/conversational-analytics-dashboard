@@ -10,37 +10,53 @@ client = OpenAI(
     organization=os.getenv("OPENAI_ORG_ID")
 )
 
+# Optional aliases for natural language matching
+COLUMN_SYNONYMS = {
+    "location": "city",
+    "region": "city",
+    "fare": "fare_amount",
+    "area": "pickup_area",
+    "drop": "drop_area",
+    "pickup": "pickup_area",
+    "date": "booking_date",
+    "duration": "trip_duration"
+}
+
 def map_synonyms(query, columns):
     for user_term, actual_col in COLUMN_SYNONYMS.items():
         if user_term.lower() in query.lower() and actual_col in columns:
             query = re.sub(rf"\b{user_term}\b", actual_col, query, flags=re.IGNORECASE)
     return query
 
-def add_case_insensitive_matching(code):
-    # Regex match patterns like: df[df["column"] == "value"]
+def add_case_insensitive_filtering(code):
+    # Modify any == comparisons to lowercase string matches
     pattern = r'df\[(df\["(.*?)"\]\s*==\s*"(.*?)")\]'
     
-    def replacer(match):
-        col = match.group(2)
-        val = match.group(3)
+    def replace_match(m):
+        col = m.group(1)
+        val = m.group(2)
         return f'df[df["{col}"].str.lower().str.strip() == "{val.lower()}"]'
 
-    return re.sub(pattern, replacer, code)
+    return re.sub(pattern, replace_match, code)
 
 def generate_code_from_query(user_query, columns):
-    # Clean query
     cleaned_query = map_synonyms(user_query, list(columns))
 
     prompt = f"""
-You're a Python assistant generating pandas code for a DataFrame called `df`.
-Write code to answer the question: "{cleaned_query}"
+You are a Python data assistant. 
+Generate only executable pandas code to analyze a DataFrame called `df` with columns: {list(columns)}.
 
-- Use pandas only.
-- Name output as `result_df`
-- Support partial and case-insensitive matching for values.
-- Assume df.columns = {list(columns)}
-- DO NOT use backticks, markdown, or triple quotes.
-- Just return executable code.
+The user query is: "{cleaned_query}"
+
+Requirements:
+- Return code that creates a filtered DataFrame called `result_df`
+- Use pandas filtering, aggregations, or sorting as needed
+- Use only the column names from df
+- Avoid markdown/triple quotes
+- No explanations or comments
+- Ensure output is smaller than the original df (filtered or aggregated)
+
+Only return the code.
     """
 
     response = client.chat.completions.create(
@@ -51,11 +67,11 @@ Write code to answer the question: "{cleaned_query}"
 
     code = response.choices[0].message.content.strip()
 
-    # Clean markdown syntax
+    # Clean markdown/triple quotes
     if code.startswith("```"):
         code = re.sub(r"```(python)?", "", code).strip("`").strip()
 
-    # Fix strict comparisons to be case-insensitive
-    code = add_case_insensitive_matching(code)
+    # Fix to apply lowercase filter matching
+    code = add_case_insensitive_filtering(code)
 
     return code
