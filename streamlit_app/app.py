@@ -65,7 +65,7 @@ if uploaded_file:
 
             else:
                 try:
-                    code = generate_code_from_query(user_query, df.columns)
+                    code = generate_code_from_query(user_query, df)
 
                     # Clean up code block formatting
                     if code.startswith("```"):
