@@ -8,44 +8,54 @@ client = openai.OpenAI(
 
 def generate_code_from_query(user_query, df):
     """
-    Convert a natural language query into executable pandas code on DataFrame `df`,
-    returning a new DataFrame named `result_df`.
+    Converts a natural language query into working pandas code.
+    Ensures result is in `result_df` and filters properly.
     """
 
+    # Gather column info
     column_names = df.columns.tolist()
-    column_values_map = {
-        col: df[col].dropna().astype(str).unique()[:10].tolist()  # preview up to 10 values per column
-        for col in column_names if df[col].dtype == 'object' or df[col].dtype.name == 'category'
+    column_examples = {
+        col: df[col].dropna().astype(str).unique()[:5].tolist()
+        for col in df.select_dtypes(include=["object", "category"])
     }
 
-    col_list = ", ".join([f'"{col}"' for col in column_names])
-    val_list = "\n".join([f"{col}: {values}" for col, values in column_values_map.items()])
-
     prompt = f"""
-You are a senior Python data analyst. Write working pandas code that performs the following user query on a DataFrame named `df`.
+You are a senior data analyst using Python and pandas.
+Your goal is to write clean, correct Python code using pandas that fulfills the following user request.
 
-⚠️ Important Notes:
-- The column names are: {col_list}
-- Example values in these columns:
-{val_list}
-- Ensure comparisons are case-insensitive (use `.str.lower()`).
-- Only return Python code. Do not print or explain anything.
-- Your result must be stored in a DataFrame called `result_df`.
-- If unsure, return `result_df = df.head(10)`
+📌 DataFrame is named `df`.
+📌 Do NOT lowercase or transform the full DataFrame.
+📌 Only apply `.str.lower()` on string **comparison** values (for case-insensitive filters).
+📌 Only output valid pandas code. NO explanation, print statements, or markdown formatting.
+📌 Store the final result in a new DataFrame called `result_df`.
 
-User query: {user_query}
+---
+
+**Available Columns**:
+{column_names}
+
+**Sample Values**:
+{column_examples}
+
+---
+
+User Query:
+{user_query}
+
+Again, just return Python code, no commentary. The result should always be assigned to `result_df`.
+If unsure, return `result_df = df.head(10)`
 """
 
     try:
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.2
+            temperature=0.3,
         )
 
         code = response.choices[0].message.content.strip()
 
-        # Clean up markdown
+        # Clean up any formatting
         if code.startswith("```"):
             code = code.strip("`").replace("python", "").strip()
 
