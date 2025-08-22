@@ -1,40 +1,64 @@
-# src/llm_engine.py
 import os
 from openai import OpenAI
 from dotenv import load_dotenv
+import re
 
-# Load API key
 load_dotenv()
+
 client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
     organization=os.getenv("OPENAI_ORG_ID")
 )
 
-def generate_code_from_query(query, columns):
-    prompt = f"""
-You are a Python data analyst. Write a single line of pandas code that answers the question:
-'{query}'
-Only use these columns: {', '.join(columns)}.
-Always assign your output to a variable named result_df.
+# Define optional column synonym mapping
+COLUMN_SYNONYMS = {
+    "location": "city",
+    "region": "city",
+    "area": "pickup_area",
+    "date": "booking_date",
+    "fare": "fare_amount",
+    "duration": "trip_duration",
+    # Add more if needed
+}
 
-Only return the code, without explanation, markdown, or comments.
-"""
+def map_synonyms(query, columns):
+    for user_term, actual_col in COLUMN_SYNONYMS.items():
+        if user_term.lower() in query.lower() and actual_col in columns:
+            query = re.sub(rf"\b{user_term}\b", actual_col, query, flags=re.IGNORECASE)
+    return query
+
+def generate_code_from_query(user_query, columns):
+    # Apply column mapping to user query
+    clean_query = map_synonyms(user_query, list(columns))
+
+    prompt = f"""
+You are a data assistant that writes Python (pandas) code for tabular analysis.
+
+Given a DataFrame called `df` and this user query:
+"{clean_query}"
+
+Write a Python code snippet that:
+- Performs the operation asked.
+- Does fuzzy value matching (ignore case, trim whitespace).
+- Returns a new DataFrame named `result_df`.
+- Assume all columns come from: {list(columns)}.
+
+Don't use backticks or triple quotes.
+Don't include explanations or print statements.
+
+Just output the code.
+    """
 
     response = client.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
+        temperature=0,
     )
 
     code = response.choices[0].message.content.strip()
 
+    # Cleanup if it accidentally adds ```python or triple quotes
     if code.startswith("```"):
-        code = code.strip("```").replace("python", "").strip()
-
-    # Ensure output is assigned to result_df
-    if "result_df" not in code:
-        code = f"result_df = {code}"
+        code = re.sub(r"```(python)?", "", code).strip("`").strip()
 
     return code
-
-    
