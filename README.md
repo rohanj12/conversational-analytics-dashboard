@@ -47,9 +47,32 @@ When a user enters a query like "Show top products by quantity sold", the system
 | "Unit price distribution"              | Histogram (with KDE)      | `assets/unit_price_distribution.png`|
 | "Top customers by total spend"          | Bar Chart                 | `assets/top_customers.png`          |
 
-### 🧪 Example
-```python
-from src.chart_generator import generate_chart_from_query
-chart_path = generate_chart_from_query(df, "Show me the monthly sales trend")
+## 🔗 End-to-End Architecture
+
+```text
+User Query
+   │
+   ▼
+🔎 Streamlit Frontend (app.py)
+   │
+   ├── Determines Query Type (Table vs Chart)
+   │
+   ▼
+🧠 LLM Engine (src/llm_engine.py)
+   │
+   ├── Uses OpenAI to generate Python code
+   ├── Fuzzy matches column names
+   ├── Cleans and validates code
+   │
+   ▼
+📊 Output Handler
+   ├── If table → Executes Pandas code
+   ├── If chart → Generates Matplotlib/Seaborn chart
+   │
+   ▼
+✅ Final Output
+   ├── Streamlit displays table or chart
+   └── Allows CSV export or image preview
+
 
 
