@@ -49,7 +49,8 @@ When a user enters a query like "Show top products by quantity sold", the system
 
 ## 🔗 End-to-End Architecture
 
-```text
+
+text
 User Query
    │
    ▼
@@ -73,6 +74,7 @@ User Query
 ✅ Final Output
    ├── Streamlit displays table or chart
    └── Allows CSV export or image preview
+
 
 
 
