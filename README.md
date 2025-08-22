@@ -75,6 +75,9 @@ User Query
    ├── Streamlit displays table or chart
    └── Allows CSV export or image preview
 
+## 📸 Demo
+![dashboard](assets/dashboard-screenshot.png)
+
 
 
 
