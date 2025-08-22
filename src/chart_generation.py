@@ -1,62 +1,60 @@
+import os
+import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import pandas as pd
-import numpy as np
-import os
-import hashlib
+from openai import OpenAI
+import uuid
 
-def generate_chart_from_query(df, query):
-    query = query.lower()
-    query_hash = hashlib.md5(query.encode()).hexdigest()
-    filename = f"assets/chart_{query_hash}.png"
+client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    organization=os.getenv("OPENAI_ORG_ID")
+)
 
-    valid_columns = df.columns.tolist()
+def generate_chart_from_query(df: pd.DataFrame, query: str, output_path="chart.png") -> str:
+    prompt = f"""
+You are a Python data visualization assistant. Given a user query and a pandas DataFrame called `df`, generate Python code to create an appropriate chart using `matplotlib` or `seaborn`.
 
-    x_col = None
-    y_col = None
+Rules:
+- Only use columns that exist in df: {list(df.columns)}
+- Save the figure using `plt.savefig("chart.png")` at the end.
+- Do not show the plot using `plt.show()`.
+- The DataFrame is already loaded as `df`.
+- Wrap your code in a Python code block.
 
-    for col in valid_columns:
-        if col.lower() in query_lower and not x_col:
-            x_col = col
-        elif col.lower() in query_lower and not y_col:
-            y_col = col
+User query: "{query}"
 
-    numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+Respond with only the code, wrapped like this:
 
-    if not x_col or not y_col:
-        if len(numeric_cols) >= 2:
-            x_col = numeric_cols[0]
-            y_col = numeric_cols[1]
-        elif len(numeric_cols) == 1:
-            x_col = numeric_cols[0]
-            y_col = None
-        else:
-            return None
+```python
+# your chart code
+"""
+# Get chart code from OpenAI
+try:
+    response = client.chat.completions.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
+    )
 
-    fig, ax = plt.subplots(figsize=(10, 5))
+    chart_code = response.choices[0].message.content.strip()
 
-    try:
-        if "hist" in query_lower:
-            df[x_col].plot(kind="hist", bins=20, ax=ax)
-        elif "bar" in query_lower:
-            df.groupby(x_col)[y_col].sum().plot(kind="bar", ax=ax)
-        elif "line" in query_lower or "trend" in query_lower:
-            df.plot(kind="line", x=x_col, y=y_col, ax=ax)
-        elif "scatter" in query_lower:
-            df.plot(kind="scatter", x=x_col, y=y_col, ax=ax)
-        elif "pie" in query_lower:
-            df.groupby(x_col)[y_col].sum().plot(kind="pie", ax=ax, autopct='%1.1f%%')
-        else:
-            df.plot(x=x_col, y=y_col, kind="line", ax=ax)
+    # Remove ```python block if present
+    if chart_code.startswith("```"):
+        chart_code = chart_code.strip("```").replace("python", "").strip()
 
-        ax.set_title(f"{x_col} vs {y_col}" if y_col else f"{x_col} Histogram")
-        plt.tight_layout()
+    # Unique filename for chart
+    chart_path = f"chart_{uuid.uuid4().hex}.png"
 
-        chart_path = "output_chart.png"
-        fig.savefig(chart_path)
-        plt.close(fig)
+    # Prepare local execution environment
+    local_env = {"df": df.copy(), "plt": plt, "sns": sns}
+    exec(chart_code, {}, local_env)
 
-        return chart_path
-    except Exception as e:
-        print("Chart error:", e)
-        return None
+    # Replace chart.png with unique path if needed
+    if os.path.exists("chart.png"):
+        os.rename("chart.png", chart_path)
+
+    return chart_path if os.path.exists(chart_path) else None
+
+except Exception as e:
+    print("❌ Chart generation failed:", str(e))
+    return None
