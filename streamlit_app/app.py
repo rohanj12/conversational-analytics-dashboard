@@ -48,7 +48,7 @@ if uploaded_file:
 
     if user_query:
         with st.spinner("💡 Thinking..."):
-        result = generate_output_from_query(df, user_query)
+            result = generate_output_from_query(df, user_query)
 
         if result["type"] == "table":
             st.success("📄 Table generated successfully!")
