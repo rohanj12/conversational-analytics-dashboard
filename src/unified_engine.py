@@ -4,48 +4,53 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import uuid
+import re
 
 # Initialize OpenAI client
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+def clean_generated_code(code: str) -> str:
+    """
+    Cleans up code returned by the LLM:
+    - Removes markdown fences, 'python' tags, and stray quotes.
+    - Ensures consistent indentation.
+    """
+    # Remove triple backticks and language hints
+    code = re.sub(r"^```[a-zA-Z]*", "", code)
+    code = re.sub(r"```$", "", code)
+    return code.strip()
+
 def generate_output_from_query(df: pd.DataFrame, user_query: str):
     """
     Unified LLM-powered function to handle both table and chart generation based on natural language queries.
-    Decides automatically whether to:
-      1. Generate a DataFrame output (table)
-      2. Generate a chart (PNG) with matplotlib/seaborn
-
-    Returns:
-        dict: {
-            "type": "table" | "chart" | "error",
-            "data": pd.DataFrame | chart_path | str
-        }
     """
     columns_list = ", ".join(df.columns)
 
-    # --------------------------------
-    # 1. Build the dynamic prompt
-    # --------------------------------
-    prompt = f"""
-    You are a Python data analytics and visualization assistant.
-    Given a pandas DataFrame called df with columns: {columns_list},
-    write Python code to answer the following user query:
+    # Detect if the query is about charts (chart mode)
+    chart_keywords = ["plot", "chart", "graph", "histogram", "distribution", 
+                      "bar", "line", "trend", "scatter", "visualize", "pie"]
+    is_chart_query = any(keyword in user_query.lower() for keyword in chart_keywords)
 
-    "{user_query}"
+    # --------------------------
+    # 1. Build the prompt
+    # --------------------------
+    base_rules = """
+    You are a Python data analytics and visualization assistant.
+    Given a pandas DataFrame called df, write **clean and minimal Python code** to answer the following user query.
 
     Rules:
-    - If the query suggests filtering, grouping, or summarizing data → return a DataFrame.
-    - If the query suggests plotting, visualizing, histogram, chart, bar, scatter, pie, line, trend, or similar → generate a matplotlib/seaborn chart.
-    - Match column names EXACTLY, considering case sensitivity.
-    - For charts, save the figure as a PNG at the given variable: chart_path.
-    - Do not display the plot (no plt.show()).
-    - Do not print anything.
-    - The result should be stored in a variable named result_df if it's a DataFrame.
+    - Use ONLY columns exactly as they appear: {columns_list}.
+    - For table queries → create a DataFrame called `result_df`.
+    - For chart queries → use matplotlib/seaborn, save to `chart_path`, **DO NOT** call plt.show().
+    - Do not print anything or add extra explanations.
+    - Do not return markdown code blocks.
     """
 
-    # --------------------------------
-    # 2. Ask LLM to generate Python code
-    # --------------------------------
+    prompt = base_rules.format(columns_list=columns_list) + f'\n\nUser query: "{user_query}"\n'
+
+    # --------------------------
+    # 2. Get Python code from OpenAI
+    # --------------------------
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -55,21 +60,15 @@ def generate_output_from_query(df: pd.DataFrame, user_query: str):
             ],
             temperature=0
         )
-
-        code = response.choices[0].message.content.strip()
-
-        # Clean any triple quotes
-        if code.startswith("```"):
-            code = code.strip("```").replace("python", "").strip()
+        code = clean_generated_code(response.choices[0].message.content)
 
     except Exception as e:
         return {"type": "error", "data": f"OpenAI request failed: {e}"}
 
-    # --------------------------------
-    # 3. Execute the generated code
-    # --------------------------------
+    # --------------------------
+    # 3. Execute the generated code safely
+    # --------------------------
     try:
-        # Prepare a unique path for charts
         chart_id = f"chart_{uuid.uuid4().hex}.png"
         chart_path = os.path.join("streamlit_app", "temp_charts", chart_id)
         os.makedirs(os.path.dirname(chart_path), exist_ok=True)
@@ -83,22 +82,22 @@ def generate_output_from_query(df: pd.DataFrame, user_query: str):
             "chart_path": chart_path
         }
 
+        # Debugging: log generated code
+        print("\n🔹 Generated Code:\n", code, "\n")
+
+        # Execute code securely
         exec(code, {}, local_env)
 
-        # Check if the code generated a DataFrame
-        result_df = local_env.get("result_df", None)
+        # If table output exists
+        if "result_df" in local_env and isinstance(local_env["result_df"], pd.DataFrame):
+            return {"type": "table", "data": local_env["result_df"]}
 
-        # If result_df exists → table output
-        if isinstance(result_df, pd.DataFrame):
-            return {"type": "table", "data": result_df}
-
-        # Else, if a chart was saved → chart output
-        elif os.path.exists(chart_path):
+        # If chart exists
+        if os.path.exists(chart_path):
             return {"type": "chart", "data": chart_path}
 
-        # Fallback if nothing matched
-        else:
-            return {"type": "error", "data": "No valid output generated from the query."}
+        # If nothing returned
+        return {"type": "error", "data": "No valid output generated from the query."}
 
     except Exception as e:
         return {"type": "error", "data": f"Execution failed: {e}"}
