@@ -7,8 +7,7 @@ import sys
 # Enable src module import
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.llm_engine import generate_code_from_query
-from src.chart_generation import generate_chart_from_query
+from src.unified_engine import generate_output_from_query
 
 # -------------------- CONFIG --------------------
 st.set_page_config(
@@ -48,52 +47,19 @@ if uploaded_file:
     user_query = st.text_input("🗨️ Ask a question about your data")
 
     if user_query:
-        with st.spinner("💡 Thinking..."):
+    with st.spinner("💡 Thinking..."):
+        result = generate_output_from_query(df, user_query)
 
-            is_chart_query = any(
-                keyword in user_query.lower()
-                for keyword in ["plot", "chart", "graph", "histogram", "distribution", "bar", "line", "trend", "scatter", "visualize"]
-            )
+        if result["type"] == "table":
+            st.success("📄 Table generated successfully!")
+            st.dataframe(result["data"].head(10))
 
-            if is_chart_query:
-                chart_path = generate_chart_from_query(df, user_query)
-                if chart_path and os.path.exists(chart_path):
-                    st.success("📈 Chart generated successfully!")
-                    st.image(Image.open(chart_path))
-                else:
-                    st.error("❌ Could not generate a chart for this query.")
+            csv = result["data"].to_csv(index=False).encode("utf-8")
+            st.download_button("📥 Download CSV", csv, "result.csv", "text/csv")
 
-            else:
-                try:
-                    code = generate_code_from_query(user_query, df)
+        elif result["type"] == "chart":
+            st.success("📈 Chart generated successfully!")
+            st.image(result["data"])
 
-                    # Clean up code block formatting
-                    if code.startswith("```"):
-                        code = code.strip("```").replace("python", "").strip()
-
-                    st.code(code, language="python")
-
-                    # Execute code safely
-                    local_env = {"df": df.copy()}
-                    exec(code, {}, local_env)
-
-                    result_df = None
-                    for var in local_env.values():
-                        if isinstance(var, pd.DataFrame) and not var.equals(df):
-                            result_df = var
-                            break
-
-                    if result_df is not None:
-                        st.success("📄 Table generated successfully!")
-                        st.dataframe(result_df.head(10))
-
-                        csv = result_df.to_csv(index=False).encode("utf-8")
-                        st.download_button("📥 Download CSV", csv, "result.csv", "text/csv")
-                    else:
-                        st.warning("⚠️ No tabular output returned.")
-
-                except Exception as e:
-                    st.error(f"❌ Error while generating table:\n{e}")
-
-else:
-    st.info("⬆️ Upload a CSV to begin.")
+        else:
+            st.error(f"❌ Error: {result['data']}")
