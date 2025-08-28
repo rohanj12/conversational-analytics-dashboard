@@ -47,7 +47,7 @@ if uploaded_file:
     user_query = st.text_input("🗨️ Ask a question about your data")
 
     if user_query:
-    with st.spinner("💡 Thinking..."):
+        with st.spinner("💡 Thinking..."):
         result = generate_output_from_query(df, user_query)
 
         if result["type"] == "table":
