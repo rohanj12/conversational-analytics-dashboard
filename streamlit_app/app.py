@@ -7,7 +7,7 @@ import sys
 # Enable src module import
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.unified_output_engine import generate_output_from_query
+from src.unified_engine import generate_output_from_query
 
 # -------------------- CONFIG --------------------
 st.set_page_config(
