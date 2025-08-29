@@ -4,95 +4,78 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import uuid
-import re
+import traceback
 
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def clean_code_block(code: str) -> str:
-    """Remove markdown fences and language hints."""
-    return re.sub(r"^```(?:python)?|```$", "", code.strip(), flags=re.MULTILINE).strip()
-
 def generate_output_from_query(df: pd.DataFrame, user_query: str):
     """
-    Unified function to generate either tables or charts reliably.
+    Unified function to return either a table or chart based on user query.
+    Returns:
+        dict: {
+            "type": "table" | "chart" | "error",
+            "data": pd.DataFrame | chart_path | error message
+        }
     """
-    columns_list = ", ".join(df.columns)
+    column_list = ", ".join([f'"{col}"' for col in df.columns])
+    chart_path = os.path.join("streamlit_app", "temp_charts", f"chart_{uuid.uuid4().hex}.png")
 
-    # Detect if the query is for charts
-    chart_keywords = ["plot", "chart", "graph", "histogram", "distribution", "scatter", "bar", "line", "trend", "visualize"]
-    is_chart_query = any(keyword in user_query.lower() for keyword in chart_keywords)
+    # Build prompt
+    prompt = f"""
+You are a Python data analytics assistant.
 
-    # Build prompt dynamically
-    if is_chart_query:
-        prompt = f"""
-        You are a Python data visualization assistant.
-        Given a pandas DataFrame df with columns: {columns_list},
-        write Python code to answer the user's chart request:
+Given a DataFrame `df` with columns: {column_list}, answer the following query:
+"{user_query}"
 
-        "{user_query}"
+Rules:
+- If it's about summarizing, filtering, counting, sorting, aggregating, output a DataFrame named `result_df`.
+- If it asks to plot/visualize/chart, use matplotlib or seaborn and save the figure to `chart_path`. Do not use plt.show().
+- Do not print anything.
+- Never return markdown. Just valid Python code.
+"""
 
-        Rules:
-        - Use matplotlib or seaborn only.
-        - Save the chart to the given variable 'chart_path'.
-        - Do NOT call plt.show().
-        - Do NOT return a DataFrame.
-        - Do NOT print anything.
-        """
-    else:
-        prompt = f"""
-        You are a Python data analytics assistant.
-        Given a pandas DataFrame df with columns: {columns_list},
-        write Python code to answer the user's query:
-
-        "{user_query}"
-
-        Rules:
-        - Always store your final DataFrame in a variable named 'result_df'.
-        - Do NOT generate charts here.
-        - Do NOT call plt.show().
-        - Do NOT print anything.
-        """
-
-    # Query LLM
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o",
             messages=[
-                {"role": "system", "content": "You are a Python analytics and visualization expert."},
+                {"role": "system", "content": "You're a Python expert who works with pandas, matplotlib, seaborn."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0
         )
-        code = clean_code_block(response.choices[0].message.content)
+        code = response.choices[0].message.content.strip()
+        if code.startswith("```"):
+            code = code.strip("```").replace("python", "").strip()
+
+        # Debug: print the generated code to terminal
+        print("\n=== Generated Code ===")
+        print(code)
+        print("======================\n")
+
+        # Setup environment
+        os.makedirs(os.path.dirname(chart_path), exist_ok=True)
+        exec_env = {
+            "df": df.copy(),
+            "pd": pd,
+            "plt": plt,
+            "sns": sns,
+            "chart_path": chart_path,
+        }
+
+        exec(code, {}, exec_env)
+
+        # Return table
+        if "result_df" in exec_env and isinstance(exec_env["result_df"], pd.DataFrame):
+            return {"type": "table", "data": exec_env["result_df"]}
+
+        # Return chart
+        elif os.path.exists(chart_path):
+            return {"type": "chart", "data": chart_path}
+
+        return {"type": "error", "data": "⚠️ Code executed but no result_df or chart_path was found."}
+
     except Exception as e:
-        return {"type": "error", "data": f"OpenAI request failed: {e}"}
-
-    # Prepare environment
-    chart_id = f"chart_{uuid.uuid4().hex}.png"
-    chart_path = os.path.join("streamlit_app", "temp_charts", chart_id)
-    os.makedirs(os.path.dirname(chart_path), exist_ok=True)
-
-    local_env = {
-        "df": df.copy(),
-        "pd": pd,
-        "plt": plt,
-        "sns": sns,
-        "chart_path": chart_path
-    }
-
-    # Execute generated code safely
-    try:
-        exec(code, {}, local_env)
-        if is_chart_query:
-            if os.path.exists(chart_path):
-                return {"type": "chart", "data": chart_path}
-            else:
-                return {"type": "error", "data": "Chart code executed but no chart was saved."}
-        else:
-            result_df = local_env.get("result_df", None)
-            if isinstance(result_df, pd.DataFrame):
-                return {"type": "table", "data": result_df}
-            else:
-                return {"type": "error", "data": "No DataFrame was generated."}
-    except Exception as e:
-        return {"type": "error", "data": f"Execution failed: {e}"}
+        return {
+            "type": "error",
+            "data": f"❌ Execution failed: {e}\n\n{traceback.format_exc()}"
+        }
