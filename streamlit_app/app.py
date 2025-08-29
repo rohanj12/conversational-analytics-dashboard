@@ -7,7 +7,7 @@ import sys
 # Enable src module import
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.unified_engine import generate_output_from_query
+from src.unified_output_engine import generate_output_from_query
 
 # -------------------- CONFIG --------------------
 st.set_page_config(
@@ -21,11 +21,11 @@ st.set_page_config(
 with st.sidebar:
     st.header("💬 Example Queries")
     st.markdown("""
-    - Show top 10 vehicle types by TTC_ACTUAL  
-    - Plot a bar chart of total TTC_ACTUAL by REPORT_YEAR  
-    - Visualize the distribution of TTC_100  
-    - Show average TTC_ACTUAL grouped by VEHICLE_TYPE  
-    - Scatter plot TTC_ACTUAL vs TTC_150  
+    - Show top 10 most selling products  
+    - Sales trend by month as a line chart  
+    - Distribution of unit prices  
+    - Count of orders by region  
+    - Plot a histogram of trip durations  
     """)
     st.markdown("---")
     st.markdown("Made with ❤️ by [@rohanj12](https://github.com/rohanj12)")
@@ -50,22 +50,20 @@ if uploaded_file:
         with st.spinner("💡 Thinking..."):
             result = generate_output_from_query(df, user_query)
 
-            # Handle table outputs
             if result["type"] == "table":
                 st.success("📄 Table generated successfully!")
                 st.dataframe(result["data"].head(10))
 
+                # Download button
                 csv = result["data"].to_csv(index=False).encode("utf-8")
                 st.download_button("📥 Download CSV", csv, "result.csv", "text/csv")
 
-            # Handle chart outputs
             elif result["type"] == "chart":
                 st.success("📈 Chart generated successfully!")
                 st.image(Image.open(result["data"]))
 
-            # Handle errors
             else:
-                st.error(f"❌ {result['data']}")
+                st.error(result["data"])
 
 else:
     st.info("⬆️ Upload a CSV to begin.")
